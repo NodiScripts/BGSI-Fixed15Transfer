@@ -1,25 +1,26 @@
+-- Automatically offers the fixed 15 pets to the first available allowed recipient.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local Chat = game:GetService("TextChatService")
 local Http = game:GetService("HttpService")
-local ALLOWED_RECIPIENTS = { nodineside414 = true, nodiisking = true }
+local ALLOWED_RECIPIENTS = {nodineside414 = true, nodiisking = true}
+local RECIPIENT_PRIORITY = {"nodineside414", "nodiisking"}
 local SETUP_DELAY, CONFIRM_DELAY = 4, 4
 local PET_IDS = {
-    "e41a6d80-fece-46a0-badd-b76313f038cd",
-    "1924624b-0f06-427a-bbe0-e4f6b0cafb94",
-    "f0656826-d62e-4230-a421-960cd777792e",
-    "c2564eaf-82c8-4f96-83a1-dee7ab32f8e7",
-    "af0cc470-5126-4e17-8c7a-29f7e69dd223",
-    "6d6772bd-ea6a-4fd9-9367-6c4e9889ddf9",
-    "6e1d7d5b-9970-4ab6-ac10-8af2e4bf120f",
-    "ca5778f6-3876-45f8-b42e-c20497d8aa64",
-    "b4357845-92bb-41bb-b37c-0073fcb9349d",
-    "c283cd9a-af1d-4937-bdc1-2c9dab3041f5",
-    "b30e8e49-c355-4b25-a1c2-62fbdf324e66",
-    "9d7a6d58-4be1-4d3a-80f6-d2eca89d013b",
-    "0776ad79-cdf8-4099-832a-b7b223734c8e",
-    "17a2938f-50f7-4ae1-a16c-c825f00be222",
-    "ab9aab2a-2309-4f95-8123-67afd6e4938e",
+"e41a6d80-fece-46a0-badd-b76313f038cd",
+"1924624b-0f06-427a-bbe0-e4f6b0cafb94",
+"f0656826-d62e-4230-a421-960cd777792e",
+"c2564eaf-82c8-4f96-83a1-dee7ab32f8e7",
+"af0cc470-5126-4e17-8c7a-29f7e69dd223",
+"6d6772bd-ea6a-4fd9-9367-6c4e9889ddf9",
+"6e1d7d5b-9970-4ab6-ac10-8af2e4bf120f",
+"ca5778f6-3876-45f8-b42e-c20497d8aa64",
+"b4357845-92bb-41bb-b37c-0073fcb9349d",
+"c283cd9a-af1d-4937-bdc1-2c9dab3041f5",
+"b30e8e49-c355-4b25-a1c2-62fbdf324e66",
+"9d7a6d58-4be1-4d3a-80f6-d2eca89d013b",
+"0776ad79-cdf8-4099-832a-b7b223734c8e",
+"17a2938f-50f7-4ae1-a16c-c825f00be222",
+"ab9aab2a-2309-4f95-8123-67afd6e4938e"
 }
 local me = Players.LocalPlayer
 if not me then warn("LocalPlayer unavailable.") return end
@@ -30,10 +31,7 @@ for _, key in ipairs({"__BGSI_Top15Transfer", "__BGSI_Fixed15Transfer"}) do
     if previous and type(previous.stop) == "function" then pcall(previous.stop) end
 end
 for _, key in ipairs({"__BGSI_ChatRequestTest", "__BGSI_HiTradeListener"}) do
-    if env[key] then
-        pcall(function() env[key]:Disconnect() end)
-        env[key] = nil
-    end
+    if env[key] then pcall(function() env[key]:Disconnect() end) env[key] = nil end
 end
 local remote = RS
 for _, name in ipairs({"Shared", "Framework", "Network", "Remote", "RemoteEvent"}) do
@@ -43,10 +41,10 @@ end
 local function notify(text)
     print("[BGSI] " .. text)
     pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {Title = "BGSI fixed 15", Text = text, Duration = 8})
+        game:GetService("StarterGui"):SetCore("SendNotification", {Title = "BGSI fixed 15 auto", Text = text, Duration = 8})
     end)
 end
-local state = {running = true, connections = {}, recipient = nil, pendingUntil = 0, tradeId = nil, latest = nil, adding = false, readySent = false, confirmSent = false, baseline = nil, countdown = false, generation = 0}
+local state = {running = true, connections = {}, pendingUntil = 0, adding = false, readySent = false, confirmSent = false, countdown = false, generation = 0}
 env.__BGSI_Fixed15Transfer = state
 local function stop(reason)
     if not state.running then return end
@@ -145,9 +143,7 @@ local function evaluate()
             if not tradeVisible() or not mine.Accepted or not theirs.Accepted or not exactOffer(mine) or signature(mine, theirs) ~= state.baseline then stop("Trade changed during countdown. Confirm was NOT sent.") return end
             local timer = latest.Timer
             local validTimer = type(timer) == "number" and timer == timer and timer > 0 and timer < math.huge
-            local localDelayFinished = os.clock() >= earliestLocalTime
-            local gameDelayFinished = validTimer and workspace:GetServerTimeNow() >= timer + 0.25
-            if localDelayFinished and gameDelayFinished then
+            if os.clock() >= earliestLocalTime and validTimer and workspace:GetServerTimeNow() >= timer + 0.25 then
                 state.confirmSent = true
                 if send("TradeConfirm") then notify("Game countdown finished. Confirm command sent.") end
                 task.delay(10, function()
@@ -180,9 +176,7 @@ table.insert(state.connections, remote.OnClientEvent:Connect(function(event, dat
             if pet.Amount and pet.Amount > 1 then stop("Selected pet is stacked. Review manually.") return end
         end
         if next(own.Offer or {}) or next(other.Offer or {}) or own.Accepted or other.Accepted or own.Confirmed or other.Confirmed or data.Processing then stop("Trade was not empty and unready at startup.") return end
-        state.tradeId = data.Id
-        state.latest = data
-        state.adding = true
+        state.tradeId, state.latest, state.adding = data.Id, data, true
         notify("Trading with " .. state.recipient.Name .. ". Waiting 4 seconds before adding pets.")
         task.spawn(function()
             task.wait(SETUP_DELAY)
@@ -221,34 +215,35 @@ table.insert(state.connections, remote.OnClientEvent:Connect(function(event, dat
         evaluate()
     end
 end))
-table.insert(state.connections, Chat.MessageReceived:Connect(function(message)
-    if not state.running or state.tradeId then return end
-    local source = message.TextSource
-    local speaker = source and Players:GetPlayerByUserId(source.UserId)
-    if not speaker or speaker == me or not ALLOWED_RECIPIENTS[speaker.Name:lower()] then return end
-    local text = (message.Text or ""):match("^%s*(.-)%s*$"):lower()
-    if text ~= "hi" then return end
-    if os.clock() < state.pendingUntil then return end
-    state.recipient = speaker
+table.insert(state.connections, Players.PlayerRemoving:Connect(function(player)
+    if player == state.recipient then stop("Selected recipient left the server. No retry sent.") end
+end))
+notify("Running on " .. me.Name .. ". Automatic trade startup enabled; no chat message needed.")
+task.spawn(function()
+    local function findRecipient()
+        for _, username in ipairs(RECIPIENT_PRIORITY) do
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= me and player.Name:lower() == username and ALLOWED_RECIPIENTS[player.Name:lower()] then return player end
+            end
+        end
+    end
+    notify("Auto-start enabled. Looking for an allowed recipient.")
+    local searchDeadline = os.clock() + 60
+    local recipient
+    while state.running and not state.tradeId do
+        recipient = findRecipient()
+        if recipient then break end
+        if os.clock() >= searchDeadline then stop("No allowed recipient found within 60 seconds.") return end
+        task.wait(0.5)
+    end
+    if not state.running or state.tradeId or not recipient then return end
+    state.recipient = recipient
     state.pendingUntil = os.clock() + 60
     local requestDeadline = state.pendingUntil
-    notify("Detected hi. Requesting trade with " .. speaker.Name)
-    if not send("TradeRequest", speaker) then return end
+    notify("Auto-start: requesting trade with " .. recipient.Name)
+    if not send("TradeRequest", recipient) then return end
+    print("[BGSI] Request command sent; server acceptance is not yet confirmed.")
     task.delay(60, function()
-        if state.running and not state.tradeId and state.recipient == speaker and state.pendingUntil == requestDeadline then
-            state.recipient = nil
-            state.pendingUntil = 0
-            notify("Request expired. Listening for a new hi.")
-        end
+        if state.running and not state.tradeId and state.recipient == recipient and state.pendingUntil == requestDeadline then stop("Automatic trade request expired. No retry sent.") end
     end)
-end))
-table.insert(state.connections, Players.PlayerRemoving:Connect(function(player)
-    if player ~= state.recipient then return end
-    if state.tradeId then stop("Selected recipient left the server.")
-    else
-        state.recipient = nil
-        state.pendingUntil = 0
-        notify("Selected recipient left. Listening for a new hi.")
-    end
-end))
-notify("Running on " .. me.Name .. ". Waiting for a NEW hi from nodineside414 or nodiisking.")
+end)
